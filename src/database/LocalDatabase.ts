@@ -301,6 +301,54 @@ const MIGRATIONS: ReadonlyArray<string> = [
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
+/** Columns the v1 schema requires. Used to recognise a foreign/legacy `tracks` table. */
+const REQUIRED_TRACK_COLUMNS: ReadonlyArray<keyof TrackRow> = [
+  'id',
+  'title',
+  'artist',
+  'local_path',
+  'automated_category',
+  'is_favorite',
+  'created_at',
+];
+
+/**
+ * Handles a database that predates schema versioning (`user_version = 0`) but
+ * already contains a `tracks` table — e.g. left behind by an earlier build in
+ * the same Expo Go sandbox. `CREATE TABLE IF NOT EXISTS` would silently keep
+ * the foreign shape and the index DDL would then fail on missing columns.
+ *
+ * If the existing table lacks any required column it is renamed aside
+ * (data preserved, not dropped) and any same-named indexes are removed so the
+ * v1 DDL can build a clean table. A correctly-shaped table is left untouched.
+ *
+ * All identifiers here are static constants — no runtime values are inlined.
+ */
+async function reconcileLegacySchema(db: SQLite.SQLiteDatabase): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(tracks)', []);
+  if (columns.length === 0) {
+    return; // No pre-existing table; nothing to reconcile.
+  }
+
+  const present = new Set(columns.map((c) => c.name));
+  const missing = REQUIRED_TRACK_COLUMNS.filter((c) => !present.has(c));
+  if (missing.length === 0) {
+    return; // Shape already matches v1.
+  }
+
+  console.warn(
+    `[LocalDatabase] Found legacy 'tracks' table missing [${missing.join(', ')}]; ` +
+      "moving it to 'tracks_legacy_v0' and rebuilding.",
+  );
+
+  await db.execAsync(`
+    DROP TABLE IF EXISTS tracks_legacy_v0;
+    ALTER TABLE tracks RENAME TO tracks_legacy_v0;
+    DROP INDEX IF EXISTS idx_tracks_category;
+    DROP INDEX IF EXISTS idx_tracks_favorite;
+  `);
+}
+
 async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   const versionRow = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   const currentVersion = versionRow?.user_version ?? 0;
@@ -310,6 +358,10 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   }
 
   await db.withTransactionAsync(async () => {
+    if (currentVersion === 0) {
+      await reconcileLegacySchema(db);
+    }
+
     for (let v = currentVersion; v < SCHEMA_VERSION; v += 1) {
       const ddl = MIGRATIONS[v];
       if (!ddl) {
@@ -346,6 +398,8 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (!databasePromise) {
     databasePromise = openAndPrepare().catch((error) => {
       databasePromise = null; // allow a retry on the next call
+      // Surface the underlying native/SQLite error in the Metro terminal.
+      console.error('[LocalDatabase] open failed:', error);
       throw error instanceof LocalDatabaseError
         ? error
         : new LocalDatabaseError('Failed to open local database.', error);

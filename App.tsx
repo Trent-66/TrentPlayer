@@ -5,14 +5,13 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
-  Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   type CategoryFolder,
@@ -111,8 +110,25 @@ async function mockDownload(track: MockTrack): Promise<string> {
   return localPath;
 }
 
+/** Flattens an error and its `.cause` chain into one readable line. */
 function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : 'Something went wrong.';
+  const parts: string[] = [];
+  let current: unknown = error;
+  let depth = 0;
+  while (current && depth < 5) {
+    const message =
+      current instanceof Error
+        ? current.message
+        : typeof current === 'string'
+          ? current
+          : JSON.stringify(current);
+    if (message && !parts.includes(message)) {
+      parts.push(message);
+    }
+    current = current instanceof Error ? (current as Error & { cause?: unknown }).cause : undefined;
+    depth += 1;
+  }
+  return parts.length > 0 ? parts.join(' → ') : 'Something went wrong.';
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +139,16 @@ type BootState = { status: 'booting' } | { status: 'ready' } | { status: 'error'
 type LibraryTab = 'cloud' | 'downloads';
 type FolderSelection = { kind: 'favorites' } | { kind: 'category'; category: TrackCategory } | null;
 
+/** Root: provides safe-area insets (status bar / notch / home indicator) to the tree. */
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <TrentPlayerApp />
+    </SafeAreaProvider>
+  );
+}
+
+function TrentPlayerApp() {
   const [boot, setBoot] = useState<BootState>({ status: 'booting' });
   const [tab, setTab] = useState<LibraryTab>('downloads');
   const [folders, setFolders] = useState<CategoryFolder[]>([]);
@@ -504,7 +529,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: palette.bg,
-    paddingTop: Platform.OS === 'android' ? 32 : 0,
   },
   flex: { flex: 1 },
   centered: {
