@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 target/
 .idea/
 *.iml
@@ -10,8 +9,6 @@ target/
 media/
 application-local.properties
 .env
-=======
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies
 node_modules/
@@ -52,4 +49,3 @@ yarn-error.*
 # generated native folders
 /ios
 /android
->>>>>>> 7dea6de18ae5a126c424d6159238b98bfb3c96a3
