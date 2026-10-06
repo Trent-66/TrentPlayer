@@ -26,24 +26,11 @@ import {
   saveDownloadedTrack,
   toggleFavorite,
 } from './src/database/LocalDatabase';
+import { useAuth, AuthProvider } from './src/auth/AuthContext';
+import { CloudLibrary } from './src/screens/CloudLibrary';
+import { AuthFlow } from './src/screens/AuthFlow';
+import { palette } from './src/theme';
 import { fileCacheManager } from './src/utils/FileCacheManager';
-
-// ---------------------------------------------------------------------------
-// Theme
-// ---------------------------------------------------------------------------
-
-const palette = {
-  bg: '#0A0A0F',
-  surface: '#14141C',
-  surfaceRaised: '#1C1C27',
-  border: '#262633',
-  text: '#F4F4F8',
-  textMuted: '#8B8B9E',
-  accent: '#C7A2FF',
-  accentStrong: '#8B5CF6',
-  favorite: '#FF4D6D',
-  danger: '#FF6B6B',
-};
 
 /** Per-genre accent + glyph for folder cards. */
 const GENRE_STYLE: Record<TrackCategory, { color: string; glyph: string }> = {
@@ -84,13 +71,6 @@ const MOCK_CATALOGUE: ReadonlyArray<MockTrack> = [
 ];
 
 const MOCK_STREAM_ORIGIN = 'https://mock.trentplayer.local/stream/';
-
-const CLOUD_STREAMS = [
-  { title: 'Trending in Accra', subtitle: 'Live radio · 12.4k listening' },
-  { title: 'Late Night Amapiano', subtitle: 'Curated mix · 2h 10m' },
-  { title: 'Phonk Drift Radio', subtitle: 'Live radio · 8.1k listening' },
-  { title: 'Gospel Sunday', subtitle: 'Curated mix · 1h 45m' },
-];
 
 /**
  * Simulates FileCacheManager.downloadTrack without a network round-trip:
@@ -143,12 +123,48 @@ type FolderSelection = { kind: 'favorites' } | { kind: 'category'; category: Tra
 export default function App() {
   return (
     <SafeAreaProvider>
-      <TrentPlayerApp />
+      <AuthProvider>
+        <SessionGate />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
 
+function SessionGate() {
+  const { status, isAuthenticated, offlineMessage, retrySession } = useAuth();
+
+  if (status === 'booting') {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <StatusBar style="light" />
+        <ActivityIndicator color={palette.favorite} size="large" />
+        <Text style={styles.bootText}>Checking your session…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (status === 'offline') {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <StatusBar style="light" />
+        <Text style={styles.errorTitle}>Can't reach TrentPlayer</Text>
+        <Text style={styles.errorBody}>{offlineMessage}</Text>
+        <Pressable style={[styles.primaryButton, styles.gateButton]} onPress={retrySession}>
+          <Text style={styles.primaryButtonText}>Try again</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <AuthFlow />;
+  }
+
+  return <TrentPlayerApp />;
+}
+
 function TrentPlayerApp() {
+  const { logout } = useAuth();
   const [boot, setBoot] = useState<BootState>({ status: 'booting' });
   const [tab, setTab] = useState<LibraryTab>('downloads');
   const [folders, setFolders] = useState<CategoryFolder[]>([]);
@@ -165,6 +181,14 @@ function TrentPlayerApp() {
     setToast(message);
     setTimeout(() => setToast(null), 2600);
   }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await logout();
+    } catch (error) {
+      showToast(describeError(error));
+    }
+  }, [logout, showToast]);
 
   // 1. Initialise the local SQLite schema on mount.
   useEffect(() => {
@@ -308,9 +332,9 @@ function TrentPlayerApp() {
           <Text style={styles.brand}>TrentPlayer</Text>
           <Text style={styles.brandSub}>Offline library</Text>
         </View>
-        <View style={styles.lockPill}>
-          <Text style={styles.lockPillText}>🧪 Expo Go</Text>
-        </View>
+        <Pressable onPress={handleLogout} hitSlop={8} style={styles.lockPill} accessibilityRole="button">
+          <Text style={styles.lockPillText}>Log out</Text>
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -318,25 +342,12 @@ function TrentPlayerApp() {
 
         {/* 3. Segment control */}
         <View style={styles.segment}>
-          <SegmentButton label="Cloud Streams" active={tab === 'cloud'} onPress={() => setTab('cloud')} />
+          <SegmentButton label="Cloud" active={tab === 'cloud'} onPress={() => setTab('cloud')} />
           <SegmentButton label="Downloads" active={tab === 'downloads'} onPress={() => setTab('downloads')} />
         </View>
 
         {tab === 'cloud' ? (
-          <View style={styles.cloudList}>
-            {CLOUD_STREAMS.map((s) => (
-              <View key={s.title} style={styles.cloudRow}>
-                <View style={styles.cloudGlyph}>
-                  <Text style={styles.cloudGlyphText}>☁️</Text>
-                </View>
-                <View style={styles.flex}>
-                  <Text style={styles.cloudTitle}>{s.title}</Text>
-                  <Text style={styles.cloudSub}>{s.subtitle}</Text>
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </View>
-            ))}
-          </View>
+          <CloudLibrary onToast={showToast} />
         ) : (
           <>
             {/* 4–6. Downloads grid — first card is the permanent Favorites row */}
@@ -540,6 +551,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   bootText: { color: palette.textMuted, fontSize: 14 },
+  gateButton: { alignSelf: 'stretch', marginTop: 8 },
   errorTitle: { color: palette.danger, fontSize: 18, fontWeight: '700' },
   errorBody: { color: palette.textMuted, fontSize: 13, textAlign: 'center', lineHeight: 20 },
 
@@ -579,30 +591,6 @@ const styles = StyleSheet.create({
   segmentButtonActive: { backgroundColor: palette.accentStrong },
   segmentLabel: { color: palette.textMuted, fontSize: 14, fontWeight: '600' },
   segmentLabelActive: { color: palette.text },
-
-  cloudList: { gap: 10 },
-  cloudRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-  },
-  cloudGlyph: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: palette.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cloudGlyphText: { fontSize: 20 },
-  cloudTitle: { color: palette.text, fontSize: 15, fontWeight: '600' },
-  cloudSub: { color: palette.textMuted, fontSize: 12, marginTop: 2 },
-  chevron: { color: palette.textMuted, fontSize: 22 },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
   card: {

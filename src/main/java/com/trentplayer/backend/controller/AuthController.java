@@ -1,10 +1,16 @@
 package com.trentplayer.backend.controller;
 
 import com.trentplayer.backend.dto.AuthRequest;
+import com.trentplayer.backend.dto.RefreshRequest;
 import com.trentplayer.backend.model.User;
 import com.trentplayer.backend.repository.UserRepository;
+import com.trentplayer.backend.security.JwtAuthenticationFilter;
 import com.trentplayer.backend.security.JwtService;
+import com.trentplayer.backend.security.JwtService.TokenStatus;
+import com.trentplayer.backend.security.JwtService.TokenType;
+import com.trentplayer.backend.security.JwtService.TokenVerification;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -13,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -68,7 +75,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<Map<String, String>> loginUser(@RequestBody AuthRequest request) {
+    public ResponseEntity<Map<String, Object>> loginUser(@RequestBody AuthRequest request) {
         if (request == null || isBlank(request.username()) || isBlank(request.password())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Username and password are required"));
         }
@@ -80,8 +87,57 @@ public class AuthController {
                     .body(Map.of("error", "Invalid username or password"));
         }
 
-        String generatedToken = jwtService.generateToken(existingUser.getUsername());
-        return ResponseEntity.ok(Map.of("token", generatedToken));
+        return ResponseEntity.ok(issueTokenPair(existingUser.getUsername()));
+    }
+
+    /**
+     * Exchanges a valid refresh token for a brand-new access + refresh pair (rotation).
+     * Returns 401 with {@code error=token_expired} or {@code error=invalid_token} so the client can
+     * tell "refresh token is also stale, log in again" from "someone sent garbage".
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<Map<String, Object>> refreshToken(@RequestBody(required = false) RefreshRequest request) {
+        if (request == null || isBlank(request.refreshToken())) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "bad_request", "message", "refreshToken is required"));
+        }
+
+        TokenVerification verification = jwtService.verify(request.refreshToken().trim());
+        if (verification.status() == TokenStatus.EXPIRED) {
+            return unauthorized(JwtAuthenticationFilter.ERROR_TOKEN_EXPIRED,
+                    "Refresh token has expired. Sign in again.");
+        }
+        if (!verification.isValid() || verification.type() != TokenType.REFRESH) {
+            return unauthorized(JwtAuthenticationFilter.ERROR_INVALID_TOKEN,
+                    "Refresh token is invalid. Sign in again.");
+        }
+        if (!userRepository.existsByUsername(verification.username())) {
+            return unauthorized(JwtAuthenticationFilter.ERROR_INVALID_TOKEN,
+                    "Account no longer exists. Sign in again.");
+        }
+
+        return ResponseEntity.ok(issueTokenPair(verification.username()));
+    }
+
+    private Map<String, Object> issueTokenPair(String username) {
+        String accessToken = jwtService.generateAccessToken(username);
+        String refreshToken = jwtService.generateRefreshToken(username);
+        Map<String, Object> body = new LinkedHashMap<>();
+        // "token" is kept for older clients that only read that field.
+        body.put("token", accessToken);
+        body.put("accessToken", accessToken);
+        body.put("refreshToken", refreshToken);
+        body.put("tokenType", "Bearer");
+        body.put("expiresIn", jwtService.getAccessExpirationMs() / 1000);
+        body.put("refreshExpiresIn", jwtService.getRefreshExpirationMs() / 1000);
+        body.put("username", username);
+        return body;
+    }
+
+    private static ResponseEntity<Map<String, Object>> unauthorized(String error, String message) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"trentplayer\", error=\"" + error + "\"")
+                .body(Map.of("error", error, "message", message));
     }
 
     private static boolean isBlank(String value) {

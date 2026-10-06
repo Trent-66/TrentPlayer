@@ -23,10 +23,20 @@ public class AudioStreamService {
         this.mediaPathResolver = mediaPathResolver;
     }
 
-    public ResponseEntity<ResourceRegion> buildPartialContent(Track track, String rangeHeader) throws IOException {
+    public ResponseEntity<?> buildPartialContent(Track track, String rangeHeader) throws IOException {
         Path safePath = mediaPathResolver.resolveSafePath(track.getFilePath());
         FileSystemResource resource = new FileSystemResource(safePath.toFile());
         long fileLength = resource.contentLength();
+        MediaType mediaType = MediaTypeFactory.getMediaType(resource)
+                .orElse(MediaType.valueOf("audio/mpeg"));
+
+        if (rangeHeader == null || rangeHeader.isBlank()) {
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                    .contentType(mediaType)
+                    .contentLength(fileLength)
+                    .body(resource);
+        }
 
         final ByteRangeWindow window;
         try {
@@ -42,8 +52,6 @@ public class AudioStreamService {
         }
 
         ResourceRegion region = new ResourceRegion(resource, window.start(), window.length());
-        MediaType mediaType = MediaTypeFactory.getMediaType(resource)
-                .orElse(MediaType.valueOf("audio/mpeg"));
 
         return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
