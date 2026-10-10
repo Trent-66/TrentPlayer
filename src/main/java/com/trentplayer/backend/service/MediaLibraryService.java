@@ -81,9 +81,19 @@ public class MediaLibraryService {
             log.warn("Skipping audio file {}: path is longer than {} characters", file, MAX_PATH);
             return;
         }
-        if (trackRepository.findByFilePath(relative).isPresent()) {
+        var existing = trackRepository.findByFilePath(relative);
+        if (existing.isPresent()) {
+            refreshGenre(existing.get(), file);
             return;
         }
+        String[] names = artistAndTitle(file);
+        String artist = names[0];
+        String title = names[1];
+        String genre = GenreToneClassifier.classify(file, artist, title);
+        trackRepository.save(new Track(clip(title), clip(artist), genre, relative));
+    }
+
+    private static String[] artistAndTitle(Path file) {
         String fileName = file.getFileName().toString();
         int dot = fileName.lastIndexOf('.');
         String base = dot > 0 ? fileName.substring(0, dot) : fileName;
@@ -95,15 +105,27 @@ public class MediaLibraryService {
             title = base.substring(split + 3).trim();
         }
         if (title.isEmpty()) {
-            title = base.trim();
-        }
-        if (title.isEmpty()) {
-            title = "Unknown";
+            title = base.trim().isEmpty() ? "Unknown" : base.trim();
         }
         if (artist.isEmpty()) {
             artist = "Unknown";
         }
-        trackRepository.save(new Track(clip(title), clip(artist), "Uncategorized", relative));
+        return new String[] { artist, title };
+    }
+
+    /** Fills in a tone when an older scan stored the file with no category. */
+    private void refreshGenre(Track track, Path file) {
+        if (track.getGenre() != null && !track.getGenre().isBlank()
+                && !"Uncategorized".equalsIgnoreCase(track.getGenre())) {
+            return;
+        }
+        String[] names = artistAndTitle(file);
+        String genre = GenreToneClassifier.classify(file, names[0], names[1]);
+        if (GenreToneClassifier.UNCATEGORIZED.equals(genre) || genre.equals(track.getGenre())) {
+            return;
+        }
+        track.setGenre(genre);
+        trackRepository.save(track);
     }
 
     private static String clip(String value) {
