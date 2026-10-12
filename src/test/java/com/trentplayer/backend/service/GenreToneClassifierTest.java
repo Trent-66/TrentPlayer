@@ -20,6 +20,9 @@ class GenreToneClassifierTest {
         assertEquals("Reggae", GenreToneClassifier.classify("Unknown", "Kingston Reggae Dub"));
         assertEquals("Gospel", GenreToneClassifier.classify("Choir", "Worship Night"));
         assertEquals("Afrobeats", GenreToneClassifier.classify("Unknown", "Afrobeats / Pop"));
+        assertEquals("Hiplife", GenreToneClassifier.classify("Sarkodie", "Adonai"));
+        assertEquals("Asakaa", GenreToneClassifier.classify("Black Sherif", "Second Sermon"));
+        assertEquals("Asakaa", GenreToneClassifier.classify("O'Kenneth", "King"));
         assertEquals("Uncategorized", GenreToneClassifier.classify("Unknown", "Untitled Take"));
     }
 }

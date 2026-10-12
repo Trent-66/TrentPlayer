@@ -34,7 +34,8 @@ public final class GenreToneClassifier {
             Map.entry("afropop", "Afrobeats"),
             Map.entry("afrofusion", "Afrobeats"),
             Map.entry("highlife", "Highlife"),
-            Map.entry("hiplife", "Highlife"),
+            Map.entry("hiplife", "Hiplife"),
+            Map.entry("asakaa", "Asakaa"),
             Map.entry("reggae", "Reggae"),
             Map.entry("dancehall", "Reggae"),
             Map.entry("dub", "Reggae"),
@@ -91,13 +92,25 @@ public final class GenreToneClassifier {
             Map.entry("j cole", "Rap"),
             Map.entry("eminem", "Rap"),
             Map.entry("kirk franklin", "Gospel"),
+            Map.entry("hillsong", "Gospel"),
             Map.entry("sinach", "Gospel"),
             Map.entry("kabza de small", "Amapiano"),
             Map.entry("maphorisa", "Amapiano"),
             Map.entry("uncle waffles", "Amapiano"),
             Map.entry("daddy lumba", "Highlife"),
             Map.entry("kojo antwi", "Highlife"),
-            Map.entry("kordhell", "Phonk")
+            Map.entry("sarkodie", "Hiplife"),
+            Map.entry("shatta wale", "Hiplife"),
+            Map.entry("kordhell", "Phonk"),
+            Map.entry("kweku smoke", "Asakaa"),
+            Map.entry("kwesi arthur", "Asakaa"),
+            Map.entry("black sherif", "Asakaa"),
+            Map.entry("jay bhad", "Asakaa"),
+            Map.entry("jay bahd", "Asakaa"),
+            Map.entry("kwaku dmc", "Asakaa"),
+            Map.entry("o kenneth", "Asakaa"),
+            Map.entry("reggie", "Asakaa"),
+            Map.entry("beeztrap kotm", "Asakaa")
     );
 
     private GenreToneClassifier() {
